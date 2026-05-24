@@ -43,6 +43,9 @@ async def get_sop(issueKey: str):
                 "sop_code":       ticket.get("sop_code"),
                 "app_code":       ticket.get("app_code"),
                 "component_code": ticket.get("component_code"),
+                # ── human-readable names for the UI ──
+                "app_name":       ticket.get("app_name"),
+                "component_name": ticket.get("component_name"),
                 "sop_match_type": ticket.get("sop_match_type"),
                 "ticket_status":  ticket.get("status"),
                 "message":        "Loaded from cache",
@@ -59,6 +62,9 @@ async def get_sop(issueKey: str):
                 "sop_code":       None,
                 "app_code":       None,
                 "component_code": None,
+                # ── human-readable names for the UI ──
+                "app_name":       ticket.get("app_name"),
+                "component_name": ticket.get("component_name"),
                 "sop_match_type": "no_sop_found",
                 "ticket_status":  ticket.get("status"),
                 "message":        "No matching SOP found. Please escalate for manual triage.",
@@ -83,15 +89,17 @@ async def get_sop(issueKey: str):
         if result.get("type") == "error":
             raise HTTPException(status_code=500, detail=result.get("message"))
 
-        # ── No SOP matched — cache the miss so agent doesn't re-run ──
+        # ── No SOP matched — cache the miss ──
         if result.get("type") == "sop_not_found":
+            # preserve app_code/component_code from the ticket row so
+            # CreateSopModal can pre-fill component_code for the agent
             await update_ticket_sop(
                 issueKey,
                 paired_steps   = [],
                 sop_title      = None,
                 sop_code       = None,
-                app_code       = None,
-                component_code = None,
+                app_code       = ticket.get("app_code"),
+                component_code = ticket.get("component_code"),
                 sop_match_type = "no_sop_found",
             )
             await log_event(
@@ -106,8 +114,10 @@ async def get_sop(issueKey: str):
                 "paired_steps":   [],
                 "sop_title":      None,
                 "sop_code":       None,
-                "app_code":       None,
-                "component_code": None,
+                "app_code":       ticket.get("app_code"),
+                "component_code": ticket.get("component_code"),
+                "app_name":       ticket.get("app_name"),
+                "component_name": ticket.get("component_name"),
                 "sop_match_type": "no_sop_found",
                 "ticket_status":  ticket.get("status"),
                 "message":        result.get("message"),
@@ -146,6 +156,9 @@ async def get_sop(issueKey: str):
             "sop_code":       result.get("sop_code"),
             "app_code":       result.get("app_code"),
             "component_code": result.get("component_code"),
+            # ── human-readable names — prefer agent result, fall back to ticket row ──
+            "app_name":       result.get("app_name")       or ticket.get("app_name"),
+            "component_name": result.get("component_name") or ticket.get("component_name"),
             "sop_match_type": result.get("sop_match_type"),
             "ticket_status":  ticket.get("status"),
             "message":        result.get("message"),
@@ -164,7 +177,7 @@ async def get_sop(issueKey: str):
 async def can_complete_ticket(issueKey: str):
     try:
         tickets = await get_all_tickets()
-        ticket = next((t for t in tickets if t["issue_key"] == issueKey), None)
+        ticket  = next((t for t in tickets if t["issue_key"] == issueKey), None)
 
         if not ticket:
             raise HTTPException(status_code=404, detail="Ticket not found")

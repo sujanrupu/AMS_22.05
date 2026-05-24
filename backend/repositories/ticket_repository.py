@@ -14,6 +14,9 @@ ALLOWED_FIELDS = {
     # ── identifiers ──
     "issue_key", "child_key", "parent_ticket_key",
 
+    # ── sop reminder ──
+    "sop_parent_key",   # links P4 reminder row back to the original ticket
+
     # ── user ──
     "name", "email",
 
@@ -22,12 +25,14 @@ ALLOWED_FIELDS = {
 
     # ── app details ──
     "app_name", "component_name", "app_code", "component_code",
+
+    # ── escalation (v2) ──
     "esc_team", "esc_level", "esc_confidence", "esc_action", "esc_rationale", "escalated_at",
 
-     # ── priority ──
+    # ── priority ──
     "urgency", "impact",
-    
-     # ── priority SLA ──
+
+    # ── priority SLA ──
     "revalidated_impact",
     "revalidated_urgency",
     "priority",
@@ -55,13 +60,16 @@ ALLOWED_FIELDS = {
     # ── sop ──
     "paired_steps",
     "sop_title",
-    "sop_code",        # replaces sop_category
+    "sop_code",
     "sop_match_type",
 
     # ── RCA ──
     "rca_root_cause", "rca_affected",
+    "rca_steps",
     "rca_confidence",
-    "rca_source"
+    "rca_source",
+    "rca_matched_from",
+    "rca_matched_summary",
 }
 
 
@@ -103,6 +111,53 @@ async def insert_ticket(data):
 
     except Exception as e:
         print("❌ insert_ticket error:", str(e))
+        return None
+
+
+# ─────────────────────────────────────────────
+# INSERT SOP REMINDER TICKET
+# Creates a brand-new ticket row for the P4 Jira reminder.
+# sop_parent_key links it back to the original ticket.
+# ─────────────────────────────────────────────
+async def insert_sop_reminder_ticket(
+    jira_key:       str,
+    sop_parent_key: str,
+    app_name:       str,
+    component_name: str,
+    app_code:       str | None = None,
+    component_code: str | None = None,
+) -> dict | None:
+    try:
+        row = {
+            "issue_key":         jira_key,
+            "sop_parent_key":    sop_parent_key,
+            "summary":           f"No SOP Found - {app_name} - {component_name}",
+            "description":       f"No SOP was found for {app_name} / {component_name}. Please create one.",
+            "status":            "Open",
+            "app_name":          app_name,
+            "component_name":    component_name,
+            "app_code":          app_code,
+            "component_code":    component_code,
+            "urgency":           "Low",
+            "impact":            "Minor",
+            "child_key":         None,
+            "parent_ticket_key": None,
+            "paired_steps":      [],
+        }
+
+        res = (
+            supabase
+            .table("tickets")
+            .insert(row)
+            .execute()
+        )
+
+        inserted = res.data[0] if res.data else None
+        print(f"✅ SOP reminder ticket inserted: {jira_key} → sop_parent_key={sop_parent_key}")
+        return inserted
+
+    except Exception as e:
+        print(f"❌ insert_sop_reminder_ticket error: {e}")
         return None
 
 
@@ -169,6 +224,9 @@ async def search_similar_tickets(
         return []
 
 
+# ─────────────────────────────────────────────
+# SEARCH COMPLETED TICKETS WITH RCA
+# ─────────────────────────────────────────────
 async def search_completed_tickets_with_rca(
     query_embedding: list,
     top_k: int = 5
@@ -187,24 +245,39 @@ async def search_completed_tickets_with_rca(
     except Exception as e:
         print("❌ search_completed_tickets_with_rca error:", str(e))
         return []
-    
 
+
+# ─────────────────────────────────────────────
+# UPDATE TICKET RCA
+# Full version — supports rca_steps, matched_from, matched_summary
+# ─────────────────────────────────────────────
 async def update_ticket_rca(
     issue_key:          str,
     root_cause:         str,
     affected_component: str,
     confidence:         str,
     source:             str,
+    resolution_steps:   list | None = None,
+    matched_from:       str  | None = None,
+    matched_summary:    str  | None = None,
 ) -> bool:
     try:
+        payload = {
+            "rca_root_cause": root_cause,
+            "rca_affected":   affected_component,
+            "rca_confidence": confidence,
+            "rca_source":     source,
+        }
+        if resolution_steps is not None:
+            payload["rca_steps"]           = resolution_steps
+        if matched_from is not None:
+            payload["rca_matched_from"]    = matched_from
+        if matched_summary is not None:
+            payload["rca_matched_summary"] = matched_summary
+
         res = (
             supabase.table("tickets")
-            .update({
-                "rca_root_cause": root_cause,
-                "rca_affected":   affected_component,
-                "rca_confidence": confidence,
-                "rca_source":     source,
-            })
+            .update(payload)
             .eq("issue_key", issue_key)
             .execute()
         )
@@ -215,7 +288,7 @@ async def update_ticket_rca(
     except Exception as e:
         print(f"❌ update_ticket_rca error: {e}")
         return False
-    
+
 
 # ─────────────────────────────────────────────
 # DELETE SINGLE
@@ -284,27 +357,33 @@ async def update_ticket_sop(
     issue_key:      str,
     paired_steps:   list,
     sop_title:      str | None = None,
-    sop_code:       str | None = None,   # replaces sop_category
+    sop_code:       str | None = None,
     app_code:       str | None = None,
     component_code: str | None = None,
     sop_match_type: str | None = None,
 ) -> bool:
     try:
+        payload = {
+            "paired_steps":   paired_steps,
+            "sop_title":      sop_title,
+            "sop_code":       sop_code,
+            "sop_match_type": sop_match_type,
+        }
+ 
+
+        if app_code is not None:
+            payload["app_code"] = app_code
+        if component_code is not None:
+            payload["component_code"] = component_code
+ 
         res = (
             supabase.table("tickets")
-            .update({
-                "paired_steps":   paired_steps,
-                "sop_title":      sop_title,
-                "sop_code":       sop_code,
-                "app_code":       app_code,
-                "component_code": component_code,
-                "sop_match_type": sop_match_type,
-            })
+            .update(payload)
             .eq("issue_key", issue_key)
             .execute()
         )
         return bool(res.data)
-
+ 
     except Exception as e:
         print("❌ update_ticket_sop error:", str(e))
         return False
@@ -519,11 +598,6 @@ async def search_completed_tickets(
         app_name       = clean(app_name)
         component_name = clean(component_name)
 
-        print("\n📤 RPC INPUT DEBUG")
-        print("app_name:", repr(app_name))
-        print("component_name:", repr(component_name))
-        print("embedding_size:", len(query_embedding))
-
         if len(query_embedding) != 384:
             print("❌ Invalid embedding size:", len(query_embedding))
             return []
@@ -538,19 +612,7 @@ async def search_completed_tickets(
             }
         ).execute()
 
-        data = res.data or []
-
-        print("\n========= COMPLETED SEARCH (RAW DB OUTPUT) =========")
-        for d in data:
-            print({
-                "issue_key":      d.get("issue_key"),
-                "app_name":       d.get("app_name"),
-                "component_name": d.get("component_name"),
-                "similarity":     d.get("similarity"),
-            })
-        print("====================================================\n")
-
-        return data
+        return res.data or []
 
     except Exception as e:
         print("❌ completed ticket search error:", str(e))
@@ -558,7 +620,7 @@ async def search_completed_tickets(
 
 
 # ─────────────────────────────────────────────
-# UPDATE TICKET ESCALATION
+# UPDATE TICKET ESCALATION (legacy)
 # ─────────────────────────────────────────────
 async def update_ticket_escalation(
     issue_key:          str,
@@ -601,6 +663,7 @@ async def update_children_status(parent_key: str, status: str):
         print("❌ update_children_status error:", str(e))
         return False
 
+
 # ─────────────────────────────────────────────
 # SMART ESCALATION UPDATE (v2) — esc_ columns
 # ─────────────────────────────────────────────
@@ -631,52 +694,3 @@ async def update_ticket_escalation_v2(
     except Exception as e:
         print("❌ update_ticket_escalation_v2 error:", str(e))
         return False
-
-
-
-
-# ─────────────────────────────────────────────
-# INSERT SOP REMINDER TICKET
-# Creates a brand-new ticket row for the P4 Jira reminder.
-# sop_parent_key links it back to the original ticket.
-# ─────────────────────────────────────────────
-async def insert_sop_reminder_ticket(
-    jira_key:       str,
-    sop_parent_key: str,
-    app_name:       str,
-    component_name: str,
-    app_code:       str | None = None,
-    component_code: str | None = None,
-) -> dict | None:
-    try:
-        row = {
-            "issue_key":          jira_key,
-            "sop_parent_key":     sop_parent_key,
-            "summary":            f"No SOP Found - {app_name} - {component_name}",
-            "description":        f"No SOP was found for {app_name} / {component_name}. Please create one.",
-            "status":             "Open",
-            "app_name":           app_name,
-            "component_name":     component_name,
-            "app_code":           app_code,
-            "component_code":     component_code,
-            "urgency":            "Low",
-            "impact":             "Minor",
-            "child_key":          None,
-            "parent_ticket_key":  None,
-            "paired_steps":       [],
-        }
-
-        res = (
-            supabase
-            .table("tickets")
-            .insert(row)
-            .execute()
-        )
-
-        inserted = res.data[0] if res.data else None
-        print(f"✅ SOP reminder ticket inserted: {jira_key} → sop_parent_key={sop_parent_key}")
-        return inserted
-
-    except Exception as e:
-        print(f"❌ insert_sop_reminder_ticket error: {e}")
-        return None
