@@ -1,7 +1,7 @@
 from core.constants import SIMILARITY_THRESHOLD
 
 from modules.duplicate_detection.agent import find_best_match
-from modules.duplicate_detection.service import generate_related
+from modules.duplicate_detection.service import generate_related, generate_duplicate_rationale
 
 from services.jira_service import (
     create_ticket,
@@ -125,6 +125,11 @@ async def handle_duplicate_flow(state):
 
         parent_key = parent.get("issue_key")
 
+        rationale = await generate_duplicate_rationale(
+            summary,
+            parent.get("summary", "")
+        )
+
         child_key = await generate_child_id(parent_key)
 
         new_ticket = await create_ticket(data, summary)
@@ -144,6 +149,7 @@ async def handle_duplicate_flow(state):
         await insert_ticket({
             "issue_key": issue_key,
             "child_key": child_key,
+            "child_rationale": rationale,
 
             "name": name,
             "email": email,

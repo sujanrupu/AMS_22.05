@@ -35,11 +35,6 @@ function NoSopBanner() {
 // ─────────────────────────────────────────────
 function SopInfoPanel({ data }) {
   if (data.sop_match_type === "no_sop_found" || !data.sop_match_type) return null;
-
-  const confluenceUrl = data.sop_code
-    ? `${import.meta.env.VITE_JIRA_BASE_URL}/wiki/search?text=${encodeURIComponent(data.sop_code + " " + (data.sop_title || ""))}`
-    : null;
-
   return (
     <div className="bg-surface border border-purple/15 rounded-2xl overflow-hidden mb-6 animate-slideUp">
       <div className="flex items-center gap-3 px-5 py-3.5 bg-surface2 border-b border-purple/15">
@@ -47,62 +42,24 @@ function SopInfoPanel({ data }) {
         <span className="font-bold text-purple text-sm flex-1">Matched SOP</span>
         <span className="font-mono text-[0.7rem] text-green bg-green/5 border border-green/20 px-3 py-0.5 rounded-full">✔ SOP Match</span>
       </div>
-
       <div className="grid grid-cols-2 divide-x divide-purple/10">
-        {/* SOP Code + Confluence button */}
         <div className="px-5 py-4">
           <span className="font-mono text-[0.6rem] text-muted uppercase tracking-widest block mb-1">SOP Code</span>
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-slate-200">{data.sop_code || "—"}</span>
-            {confluenceUrl && (
-              <a
-                href={confluenceUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="Open SOP in Confluence"
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  background: "rgba(59,130,246,0.1)",
-                  border: "1px solid rgba(59,130,246,0.25)",
-                  color: "#93c5fd",
-                  fontSize: "0.58rem",
-                  fontWeight: 700,
-                  fontFamily: "'JetBrains Mono', monospace",
-                  padding: "2px 8px",
-                  borderRadius: 6,
-                  textDecoration: "none",
-                  letterSpacing: "0.03em",
-                  transition: "all 0.15s ease",
-                  whiteSpace: "nowrap",
-                }}
-                onMouseEnter={e => e.currentTarget.style.background = "rgba(59,130,246,0.2)"}
-                onMouseLeave={e => e.currentTarget.style.background = "rgba(59,130,246,0.1)"}
-              >
-                🔗 Confluence
-              </a>
-            )}
-          </div>
+          <span className="font-bold text-slate-200">{data.sop_code || "—"}</span>
         </div>
-
-        {/* Title */}
         <div className="px-5 py-4">
           <span className="font-mono text-[0.6rem] text-muted uppercase tracking-widest block mb-1">Title</span>
           <span className="font-bold text-slate-200">{data.sop_title || "—"}</span>
         </div>
       </div>
-
       <div className="grid grid-cols-2 divide-x divide-purple/10 border-t border-purple/10">
-        {/* App Name (was app_code) */}
         <div className="px-5 py-4">
           <span className="font-mono text-[0.6rem] text-muted uppercase tracking-widest block mb-1">App</span>
-          <span className="font-bold text-slate-200">{data.app_name || "—"}</span>
+          <span className="font-bold text-slate-200">{data.app_code || "—"}</span>
         </div>
-        {/* Component Name (was component_code) */}
         <div className="px-5 py-4">
           <span className="font-mono text-[0.6rem] text-muted uppercase tracking-widest block mb-1">Component</span>
-          <span className="font-bold text-slate-200">{data.component_name || "—"}</span>
+          <span className="font-bold text-slate-200">{data.component_code || "—"}</span>
         </div>
       </div>
     </div>
@@ -165,7 +122,9 @@ function NoSopEscalatePrompt({ onEscalate, issueKey }) {
             ✖ Issue Not Resolved
           </button>
         ) : (
-          <div style={{ background: "rgba(248,113,113,0.05)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: 16, padding: "20px 16px" }}>
+          <div
+            style={{ background: "rgba(248,113,113,0.05)", border: "1px solid rgba(248,113,113,0.2)", borderRadius: 16, padding: "20px 16px" }}
+          >
             <div style={{ fontSize: "1.8rem", marginBottom: 8 }}>⚠</div>
             <p style={{ fontWeight: 700, color: "#f87171", fontSize: "0.85rem", marginBottom: 8 }}>
               Issue Not Resolved
@@ -219,6 +178,8 @@ export default function Sops() {
 
   useEffect(() => { fetchSop(); }, [fetchSop]);
 
+
+
   useEffect(() => {
     if (issueKey !== "UNKNOWN" && issueKey.includes(".")) {
       window.location.replace(`/sops?id=${issueKey.split(".")[0]}`);
@@ -236,12 +197,14 @@ export default function Sops() {
   const paired      = data?.paired_steps || [];
   const progress    = getProgress(paired.length);
   const isCompleted = data?.ticket_status === "Completed";
-  const escTeam     = escResult?.esc_team   || null;
-  const escLevel    = escResult?.esc_level  || null;
-  const escAction   = escResult?.esc_action || null;
+  // Pull escalation data from useSop hook
+  const escTeam    = escResult?.esc_team   || null;
+  const escLevel   = escResult?.esc_level  || null;
+  const escAction  = escResult?.esc_action || null;
   const isEscalated = !!(escTeam);
   const isReadOnly  = isCompleted || isEscalated;
 
+  // Auto-tick all checklist items when escalated
   useEffect(() => {
     if (isEscalated && data?.paired_steps?.length > 0) {
       selectAll([]); selectAll(data.paired_steps);
@@ -253,7 +216,11 @@ export default function Sops() {
     if (success) {
       const check = await checkBeforeResolve(issueKey);
       if (!check.allowed) {
-        setConfirmModal({ issueKey, openChildren: check.openChildren, mode: "sop_complete" });
+        setConfirmModal({
+          issueKey,
+          openChildren: check.openChildren,
+          mode: "sop_complete",
+        });
         return;
       }
       const completeRes = await completeTicket();
@@ -264,7 +231,9 @@ export default function Sops() {
         const channel = escalateRes.channel || escalateRes.team || "";
         localStorage.setItem(`esc_${issueKey}`, channel);
       }
-      setEscalationDisplay(escalateRes?.channel || escalateRes?.team || "No Channel");
+      setEscalationDisplay(
+        escalateRes?.channel || escalateRes?.team || "No Channel"
+      );
     }
   }
 
@@ -323,14 +292,26 @@ export default function Sops() {
             🚨
           </div>
           <div className="flex-1">
-            <p className="font-bold text-red text-sm mb-1">This ticket has already been escalated</p>
+            <p className="font-bold text-red text-sm mb-1">
+              This ticket has already been escalated
+            </p>
             {escTeam && escLevel && (
               <p className="font-mono text-[0.68rem] mt-0.5" style={{ color: "#94a3b8" }}>
-                Routed to <strong style={{ color: "#c4b5fd" }}>{escTeam}</strong>
-                {" "}at <strong style={{ color: escLevel === "L3" ? "#f87171" : escLevel === "L2" ? "#60a5fa" : "#facc15" }}>{escLevel}</strong>
-                {escAction === "AUTO_ROUTED"      && <span style={{ marginLeft: 8, color: "#4ade80",  fontSize: "0.6rem" }}>✦ Auto-Escalated</span>}
-                {escAction === "HUMAN_FINALISED"  && <span style={{ marginLeft: 8, color: "#a78bfa",  fontSize: "0.6rem" }}>✔ Human Reviewed</span>}
-                {escAction === "QUARANTINE"       && <span style={{ marginLeft: 8, color: "#f87171",  fontSize: "0.6rem" }}>⚠ Quarantine</span>}
+                Routed to{" "}
+                <strong style={{ color: "#c4b5fd" }}>{escTeam}</strong>
+                {" "}at{" "}
+                <strong style={{ color: escLevel === "L3" ? "#f87171" : escLevel === "L2" ? "#60a5fa" : "#facc15" }}>
+                  {escLevel}
+                </strong>
+                {escAction === "AUTO_ROUTED" && (
+                  <span style={{ marginLeft: 8, color: "#4ade80", fontSize: "0.6rem" }}>✦ Auto-Escalated</span>
+                )}
+                {escAction === "HUMAN_FINALISED" && (
+                  <span style={{ marginLeft: 8, color: "#a78bfa", fontSize: "0.6rem" }}>✔ Human Reviewed</span>
+                )}
+                {escAction === "QUARANTINE" && (
+                  <span style={{ marginLeft: 8, color: "#f87171", fontSize: "0.6rem" }}>⚠ Quarantine</span>
+                )}
               </p>
             )}
             <p className="font-mono text-[0.65rem] text-muted mt-1">
@@ -475,7 +456,7 @@ export default function Sops() {
             <NoSopEscalatePrompt onEscalate={() => handleResolved(false)} issueKey={issueKey} />
           )}
 
-          {/* RESOLUTION PROMPT */}
+          {/* RESOLUTION PROMPT — only when SOP matched and all steps checked */}
           {!isReadOnly && !noSopFound && progress === 100 && resolved === null && (
             <ResolutionPrompt onResolved={handleResolved} />
           )}
@@ -499,12 +480,13 @@ export default function Sops() {
               <p className="font-bold text-red text-sm mb-3">Issue Not Resolved</p>
               <p className="text-[0.78rem] text-slate-400 leading-relaxed mb-5">
                 To escalate this ticket to the correct team and level, go back to the Dashboard
-                and click the <strong style={{ color: "#c4b5fd" }}>🚀 Escalate</strong> button on ticket{" "}
-                <strong style={{ color: "#facc15" }}>{issueKey}</strong>.
+                and click the <strong style={{ color: "#c4b5fd" }}>🚀 Escalate</strong> button on ticket <strong style={{ color: "#facc15" }}>{issueKey}</strong>.
               </p>
               <a
                 href="/tickets"
-                onClick={() => localStorage.setItem("highlight_ticket", issueKey)}
+                onClick={() => {
+                  localStorage.setItem("highlight_ticket", issueKey);
+                }}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 8,
                   background: "rgba(124,58,237,0.18)", border: "1px solid rgba(124,58,237,0.35)",
@@ -532,7 +514,10 @@ export default function Sops() {
           onCancel={() => setConfirmModal(null)}
           onConfirm={async () => {
             setConfirmModal(null);
-            const res = await apiRequest(`/tickets/${issueKey}/complete?force=true`, "PUT");
+            const res = await apiRequest(
+              `/tickets/${issueKey}/complete?force=true`,
+              "PUT"
+            );
             if (!res?.error) {
               setCompletedBanner(true);
               setResolved(true);

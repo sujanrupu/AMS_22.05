@@ -41,3 +41,33 @@ Output format:
 - Issue 3
 - Issue 4
 """
+
+
+
+DUPLICATE_RATIONALE_PROMPT = """
+You are an IT incident triage analyst.
+
+Compare the NEW issue and the PARENT issue and explain WHY they appear to be duplicates.
+
+Rules:
+- Write EXACTLY 2–3 short lines
+- Be highly specific to the provided issues
+- Mention overlapping symptoms, errors, workflows, actions, systems, modules, APIs or components
+- Mention common keywords found in BOTH issues
+- Explain what concrete similarity caused duplicate detection based on root-cause
+- Do NOT give generic statements
+- Do NOT say "similar issue", "same context", "AI thinks", or "appears related"
+- Do NOT invent information not present in the text
+- If both mention login timeout, mention login timeout
+- If both mention payment API failure, mention payment API failure
+- If both mention dashboard loading, mention dashboard loading
+- Use the actual issue content
+
+NEW ISSUE:
+{new}
+
+PARENT ISSUE:
+{parent}
+
+Return only the rationale text.
+"""

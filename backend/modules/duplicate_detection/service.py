@@ -1,6 +1,6 @@
 import re
 from services.llm_service import call_llm
-from .prompt import DUPLICATE_PROMPT, RELATED_PROMPT
+from .prompt import DUPLICATE_PROMPT, RELATED_PROMPT, DUPLICATE_RATIONALE_PROMPT
 
 
 # Extract numeric similarity score from LLM response (0–100)
@@ -38,3 +38,23 @@ async def generate_related(summary):
         for line in res.split("\n")
         if line.strip()
     ]
+
+
+async def generate_duplicate_rationale(
+    new_summary: str,
+    parent_summary: str
+):
+    prompt = DUPLICATE_RATIONALE_PROMPT.format(
+        new=new_summary,
+        parent=parent_summary
+    )
+
+    try:
+        res = await call_llm(prompt)
+        return res.strip()
+
+    except Exception:
+        return (
+            "Issue appears highly similar based on "
+            "matching symptoms and application context."
+        )

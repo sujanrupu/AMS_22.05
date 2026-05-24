@@ -241,6 +241,17 @@ async def merge_tickets_api(payload: dict):
         current  = payload.get("current_ticket")
         selected = payload.get("selected_tickets", [])
 
+        merge_reason = payload.get(
+            "merge_reason",
+            ""
+        ).strip()
+
+        if not merge_reason:
+            return {
+                "type":"error",
+                "message":"Merge rationale required"
+            }
+
         # support both calling conventions
         target_parent_key  = payload.get("target_parent_key")
         source_parent_keys = payload.get("source_parent_keys", [])
@@ -265,7 +276,11 @@ async def merge_tickets_api(payload: dict):
             else:
                 return {"type": "error", "message": "Invalid mode"}
 
-        result = await merge_tickets(target_parent=target, source_parents=sources)
+        result = await merge_tickets(
+            target_parent=target,
+            source_parents=sources,
+            merge_reason=merge_reason
+        )
 
         await log_event(ticket_id=target, event="MERGE_RECEIVED", actor="system",
                         details=f"Merge completed with sources: {', '.join(sources)}")

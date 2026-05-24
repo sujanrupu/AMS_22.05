@@ -100,7 +100,8 @@ async def get_next_child_number(parent_key: str):
 # ─────────────────────────────────────────────
 async def merge_tickets(
     target_parent: str,
-    source_parents: list
+    source_parents: list,
+    merge_reason:str
 ):
 
     try:
@@ -266,7 +267,9 @@ async def merge_tickets(
                     "child_key":
                         f"{target_parent}.{next_num}",
 
-                    "is_duplicate": True
+                    "is_duplicate": True,
+
+                    "child_rationale":  merge_reason
                 }
 
                 next_num += 1

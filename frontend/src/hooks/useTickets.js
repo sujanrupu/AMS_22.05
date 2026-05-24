@@ -2,15 +2,15 @@ import { useState, useCallback } from "react";
 import { apiRequest } from "../api/apiClient";
 
 export function useTickets() {
-  const [tickets,            setTickets]           = useState([]);
-  const [reminderTickets,    setReminderTickets]    = useState([]);
+  const [tickets, setTickets] = useState([]);
+  const [reminderTickets, setReminderTickets] = useState([]);
   const [completedReminders, setCompletedReminders] = useState([]);
-  const [loading,            setLoading]            = useState(true);
-  const [childModal,         setChildModal]         = useState(null);
-  const [deleteModal,        setDeleteModal]        = useState(null);
-  const [mergeModal,         setMergeModal]         = useState(null);
-  const [mergeTickets,       setMergeTickets]       = useState([]);
-  const [confirmModal,       setConfirmModal]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [childModal, setChildModal] = useState(null);
+  const [deleteModal, setDeleteModal] = useState(null);
+  const [mergeModal, setMergeModal] = useState(null);
+  const [mergeTickets, setMergeTickets] = useState([]);
+  const [confirmModal, setConfirmModal] = useState(null);
 
   // ── LOAD ──
   // showLoader=true  → shows skeleton (initial load)
@@ -20,13 +20,27 @@ export function useTickets() {
     try {
       const res = await apiRequest("/tickets");
       const all =
-        Array.isArray(res)          ? res :
-        Array.isArray(res?.tickets) ? res.tickets :
-        Array.isArray(res?.data)    ? res.data : [];
+        Array.isArray(res) ? res :
+          Array.isArray(res?.tickets) ? res.tickets :
+            Array.isArray(res?.data) ? res.data : [];
 
       setReminderTickets(all.filter(t => !!t.sop_parent_key && t.status !== "Completed"));
       setCompletedReminders(all.filter(t => !!t.sop_parent_key && t.status === "Completed"));
-      setTickets(all.filter(t => !t.parent_ticket_key && !t.child_key && !t.sop_parent_key));
+      const parentTickets = all.filter(
+        t =>
+          !t.parent_ticket_key &&
+          !t.child_key &&
+          !t.sop_parent_key
+      );
+
+      const ticketsWithCounts = parentTickets.map(ticket => ({
+        ...ticket,
+        child_count: all.filter(
+          c => c.parent_ticket_key === ticket.issue_key
+        ).length
+      }));
+
+      setTickets(ticketsWithCounts);
 
       return all; // returned so requestComplete can use fresh data
     } catch (err) {
@@ -42,7 +56,7 @@ export function useTickets() {
     const res = await apiRequest(`/tickets/${issueKey}/complete-check`);
 
     // always work from fresh data
-    const all    = await loadTickets();
+    const all = await loadTickets();
     const ticket = all.find(t => t.issue_key === issueKey) || null;
 
     if (res?.requires_confirmation) {
@@ -53,7 +67,7 @@ export function useTickets() {
     // no open children — complete directly
     const completeRes = await apiRequest(`/tickets/${issueKey}/complete`, "PUT");
     if (!completeRes?.error) {
-      const freshAll    = await loadTickets();
+      const freshAll = await loadTickets();
       const freshTicket = freshAll.find(t => t.issue_key === issueKey) || ticket;
 
       if (freshTicket?.sop_match_type === "no_sop_found") {
@@ -127,9 +141,9 @@ export function useTickets() {
   const openChildModal = useCallback(async (parentKey) => {
     const res = await apiRequest("/tickets");
     const all =
-      Array.isArray(res)          ? res :
-      Array.isArray(res?.tickets) ? res.tickets :
-      Array.isArray(res?.data)    ? res.data : [];
+      Array.isArray(res) ? res :
+        Array.isArray(res?.tickets) ? res.tickets :
+          Array.isArray(res?.data) ? res.data : [];
     setChildModal({ parentKey, children: all.filter(t => t.parent_ticket_key === parentKey) });
   }, []);
 
@@ -153,14 +167,14 @@ export function useTickets() {
 
     const res = await apiRequest("/tickets");
     const all =
-      Array.isArray(res)          ? res :
-      Array.isArray(res?.tickets) ? res.tickets :
-      Array.isArray(res?.data)    ? res.data : [];
+      Array.isArray(res) ? res :
+        Array.isArray(res?.tickets) ? res.tickets :
+          Array.isArray(res?.data) ? res.data : [];
 
     setMergeTickets(all.filter(t =>
       !t.parent_ticket_key &&
-      !t.child_key         &&
-      !t.sop_parent_key    &&
+      !t.child_key &&
+      !t.sop_parent_key &&
       t.issue_key !== ticketObj.issue_key
     ));
     setMergeModal({ targetKey: ticketObj.issue_key, ticket: ticketObj });
@@ -172,7 +186,17 @@ export function useTickets() {
       const payload =
         typeof targetKeyOrPayload === "object" && !sourceKey
           ? targetKeyOrPayload
-          : { target_parent_key: targetKeyOrPayload, source_parent_keys: [sourceKey] };
+          : {
+            target_parent_key:
+              targetKeyOrPayload,
+
+            source_parent_keys: [
+              sourceKey
+            ],
+
+            merge_rationale:
+              targetKeyOrPayload.merge_rationale || ""
+          };
 
       const res = await apiRequest("/tickets/merge", "POST", payload);
       console.log("Merge result:", res);

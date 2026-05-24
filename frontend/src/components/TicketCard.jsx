@@ -338,7 +338,7 @@ export default function TicketCard({
             🔍 RCA
           </button>
           <button className="tc-btn tc-btn-child" onClick={() => onOpenChildren(t.issue_key)}>
-            👥 Child
+            👥 Child ({t.child_count || 0})
           </button>
           <button
             className="tc-btn tc-btn-merge"

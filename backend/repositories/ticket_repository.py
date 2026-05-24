@@ -12,7 +12,7 @@ supabase = create_client(
 ALLOWED_FIELDS = {
 
     # ── identifiers ──
-    "issue_key", "child_key", "parent_ticket_key",
+    "issue_key", "child_key", "parent_ticket_key", "child_rationale",
 
     # ── sop reminder ──
     "sop_parent_key",   # links P4 reminder row back to the original ticket
@@ -363,27 +363,21 @@ async def update_ticket_sop(
     sop_match_type: str | None = None,
 ) -> bool:
     try:
-        payload = {
-            "paired_steps":   paired_steps,
-            "sop_title":      sop_title,
-            "sop_code":       sop_code,
-            "sop_match_type": sop_match_type,
-        }
- 
-
-        if app_code is not None:
-            payload["app_code"] = app_code
-        if component_code is not None:
-            payload["component_code"] = component_code
- 
         res = (
             supabase.table("tickets")
-            .update(payload)
+            .update({
+                "paired_steps":   paired_steps,
+                "sop_title":      sop_title,
+                "sop_code":       sop_code,
+                "app_code":       app_code,
+                "component_code": component_code,
+                "sop_match_type": sop_match_type,
+            })
             .eq("issue_key", issue_key)
             .execute()
         )
         return bool(res.data)
- 
+
     except Exception as e:
         print("❌ update_ticket_sop error:", str(e))
         return False
